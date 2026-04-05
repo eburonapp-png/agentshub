@@ -16,6 +16,14 @@ export class NexusLiveClient {
   private retryCount = 0;
   private maxRetries = 5;
 
+  private isQuotaError(err: any): boolean {
+    const errMsg = (err.message || String(err)).toLowerCase();
+    return errMsg.includes('quota') || 
+           errMsg.includes('rate limit') ||
+           errMsg.includes('exceeded') ||
+           errMsg.includes('429');
+  }
+
   async connect(agent: Agent, callbacks: {
     onTranscription?: (text: string, isUser: boolean) => void;
     onAudioStart?: () => void;
@@ -115,7 +123,13 @@ export class NexusLiveClient {
               console.warn("Live API Error (Ignored):", err.message);
             } else {
               console.error("Live API Error:", err);
-              callbacks.onError?.(err);
+              if (this.isQuotaError(err)) {
+                const quotaErr = new Error("Gemini API Quota Exceeded during session. Please wait a moment.");
+                (quotaErr as any).isQuotaExceeded = true;
+                callbacks.onError?.(quotaErr);
+              } else {
+                callbacks.onError?.(err);
+              }
             }
           }
         }
@@ -129,15 +143,13 @@ export class NexusLiveClient {
         return null;
       }
 
-      const isQuotaError = errMsg.toLowerCase().includes('quota') || 
-                          errMsg.toLowerCase().includes('rate limit') ||
-                          errMsg.toLowerCase().includes('exceeded') ||
-                          errMsg.toLowerCase().includes('429');
+      const isQuotaError = this.isQuotaError(err);
 
       if (isQuotaError && this.retryCount < this.maxRetries) {
         this.retryCount++;
         
         // Try to parse "Please retry in 27.773839507s."
+        const errMsg = err.message || String(err);
         let delay = Math.pow(2, this.retryCount) * 1000 + Math.random() * 1000;
         const retryMatch = errMsg.match(/retry in ([\d.]+)s/i);
         if (retryMatch && retryMatch[1]) {
@@ -146,16 +158,18 @@ export class NexusLiveClient {
 
         console.warn(`Quota/Rate limit exceeded, retrying in ${Math.round(delay)}ms... (Attempt ${this.retryCount}/${this.maxRetries})`);
         await new Promise(r => setTimeout(r, delay));
-        return this.connect(agent, callbacks, history);
+        return this.connect(agent, callbacks, history, modelName);
       }
 
       if (isQuotaError) {
         const quotaErr = new Error("Gemini API Quota Exceeded. Please check your plan at ai.google.dev or wait a moment before trying again.");
         (quotaErr as any).isQuotaExceeded = true;
         callbacks.onError?.(quotaErr);
+        this.retryCount = 0; // Reset for next manual attempt
         throw quotaErr;
       }
 
+      this.retryCount = 0; // Reset on other errors too
       callbacks.onError?.(err);
       throw err;
     }

@@ -198,6 +198,7 @@ export default function App() {
   };
 
   const startMeeting = async (prompt: string) => {
+    setQuotaError(null);
     const fullPrompt = prompt + getContextPrompt();
     setMeetingState(prev => ({
       ...prev,
@@ -617,12 +618,25 @@ export default function App() {
                 </div>
                 <p className="text-xs font-bold text-red-500 uppercase tracking-wider">{quotaError}</p>
               </div>
-              <button 
-                onClick={() => setQuotaError(null)}
-                className="p-1.5 hover:bg-red-500/20 rounded-lg text-red-500 transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => {
+                    setQuotaError(null);
+                    if (meetingState.userPrompt) {
+                      startMeeting(meetingState.userPrompt);
+                    }
+                  }}
+                  className="px-3 py-1 bg-red-500 text-white text-[10px] font-bold uppercase rounded-lg hover:bg-red-600 transition shadow-lg"
+                >
+                  Retry Meeting
+                </button>
+                <button 
+                  onClick={() => setQuotaError(null)}
+                  className="p-1.5 hover:bg-red-500/20 rounded-lg text-red-500 transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
