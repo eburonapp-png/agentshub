@@ -22,7 +22,7 @@ export class NexusLiveClient {
     onAudioEnd?: () => void;
     onToolCall?: (name: string, args: any) => void;
     onError?: (err: any) => void;
-  }, history?: Message[]): Promise<any> {
+  }, history?: Message[], modelName: string = "gemini-3.1-flash-live-preview"): Promise<any> {
     try {
       if (this.session) {
         try {
@@ -60,7 +60,7 @@ export class NexusLiveClient {
       }
 
       this.session = await this.ai.live.connect({
-        model: "gemini-3.1-flash-live-preview",
+        model: modelName,
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
@@ -131,22 +131,31 @@ export class NexusLiveClient {
 
       const isQuotaError = errMsg.toLowerCase().includes('quota') || 
                           errMsg.toLowerCase().includes('rate limit') ||
-                          errMsg.toLowerCase().includes('exceeded');
+                          errMsg.toLowerCase().includes('exceeded') ||
+                          errMsg.toLowerCase().includes('429');
 
       if (isQuotaError && this.retryCount < this.maxRetries) {
         this.retryCount++;
         
         // Try to parse "Please retry in 27.773839507s."
-        let delay = Math.pow(2, this.retryCount) * 1000;
+        let delay = Math.pow(2, this.retryCount) * 1000 + Math.random() * 1000;
         const retryMatch = errMsg.match(/retry in ([\d.]+)s/i);
         if (retryMatch && retryMatch[1]) {
-          delay = (parseFloat(retryMatch[1]) + 1) * 1000; // Add 1s buffer
+          delay = (parseFloat(retryMatch[1]) + 1.5) * 1000; // Add 1.5s buffer
         }
 
         console.warn(`Quota/Rate limit exceeded, retrying in ${Math.round(delay)}ms... (Attempt ${this.retryCount}/${this.maxRetries})`);
         await new Promise(r => setTimeout(r, delay));
         return this.connect(agent, callbacks, history);
       }
+
+      if (isQuotaError) {
+        const quotaErr = new Error("Gemini API Quota Exceeded. Please check your plan at ai.google.dev or wait a moment before trying again.");
+        (quotaErr as any).isQuotaExceeded = true;
+        callbacks.onError?.(quotaErr);
+        throw quotaErr;
+      }
+
       callbacks.onError?.(err);
       throw err;
     }

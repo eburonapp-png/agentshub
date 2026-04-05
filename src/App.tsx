@@ -109,6 +109,8 @@ export default function App() {
   const [knowledgeFiles, setKnowledgeFiles] = useState<KnowledgeFile[]>([]);
   const [activeMockup, setActiveMockup] = useState<{ html: string, css: string, js: string, explanation: string } | null>(null);
   const [isPreviewPinned, setIsPreviewPinned] = useState(false);
+  const [quotaError, setQuotaError] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<string>("gemini-3.1-flash-live-preview");
   
   // Refs
   const liveClientRef = useRef<NexusLiveClient | null>(null);
@@ -236,8 +238,16 @@ export default function App() {
         onAudioEnd: () => { 
           audioFinished = true; 
           completeLastMessage();
+        },
+        onError: (err) => {
+          console.error("Agent Speak Error:", err);
+          if (err.isQuotaExceeded) {
+            setQuotaError(err.message);
+          }
+          audioFinished = true;
+          setMeetingState(prev => ({ ...prev, isMeetingRunning: false }));
         }
-      }, history);
+      }, history, selectedModel);
 
       await liveClientRef.current?.sendText(textPrompt);
       while (!audioFinished) await new Promise(r => setTimeout(r, 500));
@@ -592,6 +602,31 @@ export default function App() {
 
       {/* Center Chat */}
       <main className="flex-1 flex flex-col relative">
+        {/* Quota Error Banner */}
+        <AnimatePresence>
+          {quotaError && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="bg-red-500/10 border-b border-red-500/20 px-6 py-3 flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-1.5 bg-red-500/20 rounded-lg">
+                  <X className="w-4 h-4 text-red-500" />
+                </div>
+                <p className="text-xs font-bold text-red-500 uppercase tracking-wider">{quotaError}</p>
+              </div>
+              <button 
+                onClick={() => setQuotaError(null)}
+                className="p-1.5 hover:bg-red-500/20 rounded-lg text-red-500 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Activity Header */}
         <header className="h-16 border-b border-zinc-800 flex items-center justify-between px-6 bg-[#09090b]/80 backdrop-blur-md sticky top-0 z-10">
           <div className="flex items-center gap-4">
@@ -618,6 +653,15 @@ export default function App() {
               <span className="text-xs font-bold text-zinc-200">Active Meeting</span>
               <span className="text-[10px] text-zinc-500 uppercase tracking-wider">{meetingState.phase.replace(/_/g, ' ')}</span>
             </div>
+            <div className="h-4 w-px bg-zinc-800 mx-2" />
+            <select 
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="bg-zinc-900 border border-zinc-800 text-[9px] font-bold uppercase tracking-wider rounded-lg px-2 py-1 text-zinc-400 focus:ring-1 focus:ring-zinc-700 outline-none cursor-pointer hover:bg-zinc-800 transition"
+            >
+              <option value="gemini-3.1-flash-live-preview">Gemini 3 Flash Live</option>
+              <option value="gemini-2.5-flash-live-preview">Gemini 2.5 Flash Native Audio</option>
+            </select>
             {(Object.values(agents) as Agent[]).some(a => a.status === 'speaking') && (
               <div className="ml-2">
                 <AudioVisualizer 
